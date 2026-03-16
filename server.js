@@ -3,64 +3,115 @@
  *
  * Setup:
  *   npm install discord.js ws
- *   node bot.js
+ *   node server.js
+ *
+ * Add CHANNEL_ID to your Render env vars:
+ *   Right-click the channel in Discord → Copy Channel ID (needs Developer Mode on)
  *
  * Slash commands:
- *   /run <argument>  — sends function call directly to Tampermonkey via WebSocket
- *   /status          — shows if Tampermonkey is connected
+ *   /run <argument>  — sends function call directly to Tampermonkey
+ *   /status          — shows connection status
  */
 
-const { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder } = require("discord.js");
+const { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder, EmbedBuilder } = require("discord.js");
 const { WebSocketServer } = require("ws");
 
-// ─── CONFIG ────────────────────────────────────────────────────────────────────
+// ─── CONFIG ───────────────────────────────────────────────────────────────────
 const DISCORD_TOKEN = process.env.DISCORD_TOKEN || "YOUR_BOT_TOKEN_HERE";
 const CLIENT_ID     = process.env.CLIENT_ID     || "YOUR_CLIENT_ID_HERE";
-const WS_PORT       = process.env.PORT          || process.env.WS_PORT || 3847; // Render sets PORT automatically
+const CHANNEL_ID    = process.env.CHANNEL_ID    || "YOUR_CHANNEL_ID_HERE";
+const WS_PORT       = process.env.PORT          || process.env.WS_PORT || 3847;
 const WS_SECRET     = process.env.WS_SECRET     || "changeme-secret-key";
-// ───────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ─── Panel state ──────────────────────────────────────────────────────────────
+let panelMessage = null;
+let connectedAt  = null;
+let currentUrl   = "unknown";
+
+function buildEmbed(connected) {
+  return new EmbedBuilder()
+    .setTitle("🖥️ Tampermonkey Remote Control")
+    .setColor(connected ? 0x57F287 : 0xED4245)
+    .addFields(
+      { name: "Status",       value: connected ? "🟢 Connected" : "🔴 Disconnected", inline: true },
+      { name: "Connected at", value: connectedAt ? `<t:${Math.floor(connectedAt / 1000)}:R>` : "—", inline: true },
+      { name: "Current URL",  value: connected ? `\`${currentUrl}\`` : "—" },
+    )
+    .setTimestamp();
+}
+
+async function sendOrUpdatePanel(connected) {
+  const channel = client.channels.cache.get(CHANNEL_ID);
+  if (!channel) {
+    console.warn("⚠️  Panel channel not found — check CHANNEL_ID");
+    return;
+  }
+
+  const embed = buildEmbed(connected);
+
+  if (panelMessage) {
+    try {
+      await panelMessage.edit({ embeds: [embed] });
+      return;
+    } catch {
+      panelMessage = null; // message deleted, send a fresh one
+    }
+  }
+
+  panelMessage = await channel.send({ embeds: [embed] });
+}
 
 // ─── WebSocket Server ─────────────────────────────────────────────────────────
-// Bind to 0.0.0.0 so Render exposes it publicly (not just localhost)
 const wss = new WebSocketServer({ host: "0.0.0.0", port: WS_PORT });
-let tmSocket = null; // the connected Tampermonkey client
+let tmSocket = null;
 
-wss.on("connection", (ws, req) => {
-  // First message must be the secret
+wss.on("connection", (ws) => {
   ws.once("message", (msg) => {
+    let parsed;
     try {
-      const { secret } = JSON.parse(msg);
-      if (secret !== WS_SECRET) {
-        ws.send(JSON.stringify({ type: "error", message: "Unauthorized" }));
-        ws.close();
-        return;
-      }
+      parsed = JSON.parse(msg);
     } catch {
       ws.close();
       return;
     }
 
-    // Auth passed — accept this as the active Tampermonkey client
-    if (tmSocket) tmSocket.close(); // drop any old connection
-    tmSocket = ws;
+    if (parsed.secret !== WS_SECRET) {
+      ws.send(JSON.stringify({ type: "error", message: "Unauthorized" }));
+      ws.close();
+      return;
+    }
+
+    // Auth passed
+    if (tmSocket) tmSocket.close();
+    tmSocket    = ws;
+    connectedAt = Date.now();
+    currentUrl  = parsed.url || "unknown";
+
     ws.send(JSON.stringify({ type: "connected", message: "Authenticated OK" }));
-    console.log("🟢 Tampermonkey connected");
+    console.log("🟢 Tampermonkey connected —", currentUrl);
+    sendOrUpdatePanel(true);
 
     ws.on("close", () => {
       if (tmSocket === ws) tmSocket = null;
       console.log("🔴 Tampermonkey disconnected");
+      sendOrUpdatePanel(false);
     });
 
     ws.on("message", (data) => {
       try {
-        const msg = JSON.parse(data);
-        if (msg.type === "result") {
-          console.log(`📨 Result from Tampermonkey: ${JSON.stringify(msg.data)}`);
+        const m = JSON.parse(data);
+        if (m.type === "result") {
+          console.log(`📨 Result: ${JSON.stringify(m.data)}`);
+        }
+        if (m.type === "url_change") {
+          currentUrl = m.url;
+          console.log("🔗 URL changed:", currentUrl);
+          sendOrUpdatePanel(true);
         }
       } catch {}
     });
 
-    // Keep-alive: ping every 30s so Render doesn't close the idle connection
     ws.isAlive = true;
     ws.on("pong", () => { ws.isAlive = true; });
   });
@@ -75,8 +126,7 @@ const keepAlive = setInterval(() => {
 }, 30_000);
 
 wss.on("close", () => clearInterval(keepAlive));
-
-console.log(`🌐 WebSocket server listening on ws://0.0.0.0:${WS_PORT}`);
+console.log(`🌐 WebSocket server on port ${WS_PORT}`);
 
 // ─── Discord Bot ──────────────────────────────────────────────────────────────
 const commands = [
@@ -106,7 +156,9 @@ const rest = new REST({ version: "10" }).setToken(DISCORD_TOKEN);
 
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 
-client.once("ready", () => console.log(`🤖 Logged in as ${client.user.tag}`));
+client.once("ready", () => {
+  console.log(`🤖 Logged in as ${client.user.tag}`);
+});
 
 client.on("interactionCreate", async interaction => {
   if (!interaction.isChatInputCommand()) return;
@@ -115,21 +167,19 @@ client.on("interactionCreate", async interaction => {
     const argument = interaction.options.getString("argument");
     await interaction.deferReply();
 
-    if (!tmSocket || tmSocket.readyState !== 1 /* OPEN */) {
-      return interaction.editReply("❌ Tampermonkey is not connected. Is the script running in your browser?");
+    if (!tmSocket || tmSocket.readyState !== 1) {
+      return interaction.editReply("❌ Tampermonkey is not connected.");
     }
 
     tmSocket.send(JSON.stringify({ type: "run", argument }));
-    await interaction.editReply(`✅ Sent to Tampermonkey!\n\`\`\`\nArgument: ${argument}\n\`\`\``);
+    await interaction.editReply(`✅ Sent!\n\`\`\`\nArgument: ${argument}\n\`\`\``);
   }
 
   else if (interaction.commandName === "status") {
     await interaction.deferReply();
     const connected = tmSocket && tmSocket.readyState === 1;
     await interaction.editReply(
-      connected
-        ? "🟢 Tampermonkey is **connected** and ready."
-        : "🔴 Tampermonkey is **not connected**."
+      connected ? "🟢 Tampermonkey is **connected**." : "🔴 Tampermonkey is **not connected**."
     );
   }
 });
