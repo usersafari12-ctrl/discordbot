@@ -42,9 +42,11 @@ function buildEmbed(connected) {
 }
 
 async function sendOrUpdatePanel(connected) {
-  const channel = client.channels.cache.get(CHANNEL_ID);
-  if (!channel) {
-    console.warn("⚠️  Panel channel not found — check CHANNEL_ID");
+  let channel;
+  try {
+    channel = await client.channels.fetch(CHANNEL_ID);
+  } catch (err) {
+    console.warn("⚠️  Panel channel not found — check CHANNEL_ID:", err.message);
     return;
   }
 
@@ -154,7 +156,7 @@ const rest = new REST({ version: "10" }).setToken(DISCORD_TOKEN);
   }
 })();
 
-const client = new Client({ intents: [GatewayIntentBits.Guilds] });
+const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages] });
 
 client.once("ready", () => {
   console.log(`🤖 Logged in as ${client.user.tag}`);
