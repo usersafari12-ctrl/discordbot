@@ -1,0 +1,11 @@
+{
+  "name": "discord-tampermonkey-rc",
+  "version": "1.0.0",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "discord.js": "^14.14.0",
+    "ws": "^8.16.0"
+  }
+}
