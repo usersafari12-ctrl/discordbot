@@ -28,37 +28,7 @@ const WS_SECRET     = process.env.WS_SECRET     || "changeme-secret-key";
 let panelMessage = null;
 let connectedAt  = null;
 let currentUrl   = "unknown";
-async function getUsername() {
-  try {
-    const response = await fetch('https://voxiom.io/profile/me', {
-      method: 'POST',                    // ← note: most profile endpoints use GET
-      headers: { 'Content-Type': 'application/json' }
-      // credentials: 'include',         // ← usually needed for auth cookies
-      // body: JSON.stringify({})        // ← probably not needed
-    });
 
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status} - ${response.statusText}`);
-    }
-
-    const data = await response.json();
-    
-    // Most common paths people use — pick the one that actually exists
-    const nickname =
-      data.data?.nickname ||
-      data.nickname ||
-      data.username ||
-      data.user?.nickname ||
-      data.profile?.nickname ||
-      'Unknown';
-
-    return nickname;
-  } catch (err) {
-    console.error('Failed to fetch username:', err);
-    return 'Error fetching nickname';
-  }
-}
-username = getUsername()
 function buildEmbed(connected) {
   return new EmbedBuilder()
     .setTitle("🖥️ Tampermonkey Remote Control")
@@ -67,7 +37,6 @@ function buildEmbed(connected) {
       { name: "Status",       value: connected ? "🟢 Connected" : "🔴 Disconnected", inline: true },
       { name: "Connected at", value: connectedAt ? `<t:${Math.floor(connectedAt / 1000)}:R>` : "—", inline: true },
       { name: "Current URL",  value: connected ? `\`${currentUrl}\`` : "—" },
-      { name: "Username", value: username}
     )
     .setTimestamp();
 }
