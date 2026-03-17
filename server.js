@@ -135,9 +135,14 @@ const commands = [
   new SlashCommandBuilder()
     .setName("run")
     .setDescription("Run a function in your Tampermonkey script")
-    .addStringOption(opt =>
-      opt.setName("argument")
-        .setDescription("The argument to pass to the function")
+    .addNumberOption(opt =>
+      opt.setName("value1")
+        .setDescription("First value")
+        .setRequired(true)
+    )
+    .addNumberOption(opt =>
+      opt.setName("value2")
+        .setDescription("Second value")
         .setRequired(true)
     ),
   new SlashCommandBuilder()
@@ -166,15 +171,16 @@ client.on("interactionCreate", async interaction => {
   if (!interaction.isChatInputCommand()) return;
 
   if (interaction.commandName === "run") {
-    const argument = interaction.options.getString("argument");
+    const value1 = interaction.options.getNumber("value1");
+    const value2 = interaction.options.getNumber("value2");
     await interaction.deferReply();
 
     if (!tmSocket || tmSocket.readyState !== 1) {
       return interaction.editReply("❌ Tampermonkey is not connected.");
     }
 
-    tmSocket.send(JSON.stringify({ type: "run", argument }));
-    await interaction.editReply(`✅ Sent!\n\`\`\`\nArgument: ${argument}\n\`\`\``);
+    tmSocket.send(JSON.stringify({ type: "run", value1, value2 }));
+    await interaction.editReply(`✅ Sent!\n\`\`\`\nValue 1: ${value1}\nValue 2: ${value2}\n\`\`\``);
   }
 
   else if (interaction.commandName === "status") {
