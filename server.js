@@ -4,25 +4,39 @@
  * Setup:
  *   npm install discord.js ws
  *   node server.js
- *
- * Add CHANNEL_ID to your Render env vars:
- *   Right-click the channel in Discord → Copy Channel ID (needs Developer Mode on)
- *
- * Slash commands:
- *   /run <argument>  — sends function call directly to Tampermonkey
- *   /status          — shows connection status
  */
 
 const { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder, EmbedBuilder } = require("discord.js");
 const { WebSocketServer } = require("ws");
+const http = require("http");
 
 // ─── CONFIG ───────────────────────────────────────────────────────────────────
 const DISCORD_TOKEN = process.env.DISCORD_TOKEN || "YOUR_BOT_TOKEN_HERE";
 const CLIENT_ID     = process.env.CLIENT_ID     || "YOUR_CLIENT_ID_HERE";
 const CHANNEL_ID    = process.env.CHANNEL_ID    || "YOUR_CHANNEL_ID_HERE";
-const WS_PORT       = process.env.PORT          || process.env.WS_PORT || 3847;
+const RENDER_URL    = process.env.RENDER_URL    || ""; // e.g. https://discordbot-pn5o.onrender.com
+const WS_PORT       = process.env.PORT          || 3847;
 const WS_SECRET     = process.env.WS_SECRET     || "changeme-secret-key";
 // ─────────────────────────────────────────────────────────────────────────────
+
+// ─── HTTP server (required by Render + used for keep-alive pings) ─────────────
+const httpServer = http.createServer((req, res) => {
+  res.writeHead(200);
+  res.end("OK");
+});
+httpServer.listen(WS_PORT, () => {
+  console.log(`🌐 HTTP server on port ${WS_PORT}`);
+});
+
+// Self-ping every 14 minutes to prevent Render free tier from sleeping
+if (RENDER_URL) {
+  setInterval(() => {
+    http.get(RENDER_URL).on("error", (err) => {
+      console.warn("⚠️  Keep-alive ping failed:", err.message);
+    });
+    console.log("♻️  Keep-alive ping sent");
+  }, 14 * 60 * 1000);
+}
 
 // ─── Panel state ──────────────────────────────────────────────────────────────
 let panelMessage = null;
@@ -59,15 +73,15 @@ async function sendOrUpdatePanel(connected) {
       await panelMessage.edit({ embeds: [embed] });
       return;
     } catch {
-      panelMessage = null; // message deleted, send a fresh one
+      panelMessage = null;
     }
   }
 
   panelMessage = await channel.send({ embeds: [embed] });
 }
 
-// ─── WebSocket Server ─────────────────────────────────────────────────────────
-const wss = new WebSocketServer({ host: "0.0.0.0", port: WS_PORT });
+// ─── WebSocket Server (shares port with HTTP via upgrade) ─────────────────────
+const wss = new WebSocketServer({ server: httpServer });
 let tmSocket = null;
 
 wss.on("connection", (ws) => {
@@ -86,7 +100,6 @@ wss.on("connection", (ws) => {
       return;
     }
 
-    // Auth passed
     if (tmSocket) tmSocket.close();
     tmSocket    = ws;
     connectedAt = Date.now();
@@ -131,21 +144,20 @@ const keepAlive = setInterval(() => {
 }, 30_000);
 
 wss.on("close", () => clearInterval(keepAlive));
-console.log(`🌐 WebSocket server on port ${WS_PORT}`);
 
 // ─── Discord Bot ──────────────────────────────────────────────────────────────
 const commands = [
   new SlashCommandBuilder()
-    .setName("run")
-    .setDescription("Run a function in your Tampermonkey script")
+    .setName("listitem")
+    .setDescription("List an item in your Tampermonkey script")
     .addNumberOption(opt =>
-      opt.setName("value1")
-        .setDescription("First value")
+      opt.setName("itemid")
+        .setDescription("The item ID")
         .setRequired(true)
     )
     .addNumberOption(opt =>
-      opt.setName("value2")
-        .setDescription("Second value")
+      opt.setName("itemprice")
+        .setDescription("The item price")
         .setRequired(true)
     ),
   new SlashCommandBuilder()
@@ -173,17 +185,17 @@ client.once("ready", () => {
 client.on("interactionCreate", async interaction => {
   if (!interaction.isChatInputCommand()) return;
 
-  if (interaction.commandName === "run") {
-    const value1 = interaction.options.getNumber("value1");
-    const value2 = interaction.options.getNumber("value2");
+  if (interaction.commandName === "listitem") {
+    const itemid    = interaction.options.getNumber("itemid");
+    const itemprice = interaction.options.getNumber("itemprice");
     await interaction.deferReply();
 
     if (!tmSocket || tmSocket.readyState !== 1) {
       return interaction.editReply("❌ Tampermonkey is not connected.");
     }
 
-    tmSocket.send(JSON.stringify({ type: "run", value1, value2 }));
-    await interaction.editReply(`✅ Sent!\n\`\`\`\nValue 1: ${value1}\nValue 2: ${value2}\n\`\`\``);
+    tmSocket.send(JSON.stringify({ type: "run", value1: itemid, value2: itemprice }));
+    await interaction.editReply(`✅ Sent!\n\`\`\`\nItem ID:    ${itemid}\nItem Price: ${itemprice}\n\`\`\``);
   }
 
   else if (interaction.commandName === "status") {
