@@ -28,6 +28,7 @@ const WS_SECRET     = process.env.WS_SECRET     || "changeme-secret-key";
 let panelMessage = null;
 let connectedAt  = null;
 let currentUrl   = "unknown";
+let currentUser  = "unknown";
 
 function buildEmbed(connected) {
   return new EmbedBuilder()
@@ -35,6 +36,7 @@ function buildEmbed(connected) {
     .setColor(connected ? 0x57F287 : 0xED4245)
     .addFields(
       { name: "Status",       value: connected ? "🟢 Connected" : "🔴 Disconnected", inline: true },
+      { name: "Username",     value: connected ? currentUser : "—", inline: true },
       { name: "Connected at", value: connectedAt ? `<t:${Math.floor(connectedAt / 1000)}:R>` : "—", inline: true },
       { name: "Current URL",  value: connected ? `\`${currentUrl}\`` : "—" },
     )
@@ -89,6 +91,7 @@ wss.on("connection", (ws) => {
     tmSocket    = ws;
     connectedAt = Date.now();
     currentUrl  = parsed.url || "unknown";
+    currentUser = parsed.username || "unknown";
 
     ws.send(JSON.stringify({ type: "connected", message: "Authenticated OK" }));
     console.log("🟢 Tampermonkey connected —", currentUrl);
@@ -133,21 +136,21 @@ console.log(`🌐 WebSocket server on port ${WS_PORT}`);
 // ─── Discord Bot ──────────────────────────────────────────────────────────────
 const commands = [
   new SlashCommandBuilder()
-    .setName("listitem")
-    .setDescription("List an item")
+    .setName("run")
+    .setDescription("Run a function in your Tampermonkey script")
     .addNumberOption(opt =>
-      opt.setName("Item ID")
-        .setDescription("itemid")
+      opt.setName("value1")
+        .setDescription("First value")
         .setRequired(true)
     )
     .addNumberOption(opt =>
-      opt.setName("Item Price")
-        .setDescription("itemprice")
+      opt.setName("value2")
+        .setDescription("Second value")
         .setRequired(true)
     ),
   new SlashCommandBuilder()
     .setName("status")
-    .setDescription("Check if the client is connected"),
+    .setDescription("Check if the Tampermonkey script is connected"),
 ].map(c => c.toJSON());
 
 const rest = new REST({ version: "10" }).setToken(DISCORD_TOKEN);
