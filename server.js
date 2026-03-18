@@ -133,21 +133,21 @@ console.log(`🌐 WebSocket server on port ${WS_PORT}`);
 // ─── Discord Bot ──────────────────────────────────────────────────────────────
 const commands = [
   new SlashCommandBuilder()
-    .setName("run")
-    .setDescription("Run a function in your Tampermonkey script")
+    .setName("listitem")
+    .setDescription("List an item")
     .addNumberOption(opt =>
-      opt.setName("value1")
-        .setDescription("First value")
+      opt.setName("Item ID")
+        .setDescription("itemid")
         .setRequired(true)
     )
     .addNumberOption(opt =>
-      opt.setName("value2")
-        .setDescription("Second value")
+      opt.setName("Item Price")
+        .setDescription("itemprice")
         .setRequired(true)
     ),
   new SlashCommandBuilder()
     .setName("status")
-    .setDescription("Check if the Tampermonkey script is connected"),
+    .setDescription("Check if the client is connected"),
 ].map(c => c.toJSON());
 
 const rest = new REST({ version: "10" }).setToken(DISCORD_TOKEN);
