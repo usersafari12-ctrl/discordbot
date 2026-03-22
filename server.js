@@ -235,7 +235,9 @@ client.on("interactionCreate", async interaction => {
       const itemid    = interaction.options.getNumber("itemid");
       const itemprice = interaction.options.getNumber("itemprice");
       await interaction.deferReply({ ephemeral: true });
-      const socket = activeSockets.get(username);
+      // Case-insensitive lookup
+    const key = [...activeSockets.keys()].find(k => k.toLowerCase() === username.toLowerCase());
+    const socket = key ? activeSockets.get(key) : null;
       if (!socket || socket.readyState !== 1) {
         return interaction.editReply(`❌ **${username}** is not connected.`);
       }
