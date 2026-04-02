@@ -210,6 +210,15 @@ const commands = [
     .addNumberOption(opt => opt.setName("itemid").setDescription("Item ID").setRequired(true))
     .addNumberOption(opt => opt.setName("itemprice").setDescription("Item price").setRequired(true)),
   new SlashCommandBuilder()
+    .setName("unequipitem")
+    .setDescription("Unequip an item from a slot")
+    .addStringOption(opt => opt.setName("username").setDescription("Username").setRequired(true))
+    .addNumberOption(opt => opt.setName("slot").setDescription("Slot number to unequip").setRequired(true)),
+  new SlashCommandBuilder()
+    .setName("unequipall")
+    .setDescription("Unequip all items from slots 0-20")
+    .addStringOption(opt => opt.setName("username").setDescription("Username").setRequired(true)),
+  new SlashCommandBuilder()
     .setName("status")
     .setDescription("Show all connected users"),
 ].map(c => c.toJSON());
@@ -245,7 +254,35 @@ client.on("interactionCreate", async interaction => {
       await interaction.editReply(`✅ Sent to **${username}**!\n\`\`\`\nItem ID:    ${itemid}\nItem Price: ${itemprice}\n\`\`\``);
     }
 
-    else if (interaction.commandName === "status") {
+    else if (interaction.commandName === "unequipall") {
+    const username = interaction.options.getString("username");
+    await interaction.deferReply({ ephemeral: true });
+    const key    = [...activeSockets.keys()].find(k => k.toLowerCase() === username.toLowerCase());
+    const socket = key ? activeSockets.get(key) : null;
+    if (!socket || socket.readyState !== 1) {
+      return interaction.editReply(`❌ **${username}** is not connected.`);
+    }
+    socket.send(JSON.stringify({ type: "unequip_all" }));
+    await interaction.editReply(`✅ Sent unequip all to **${key}** — unequipping slots 0–20...`);
+  }
+
+  else if (interaction.commandName === "unequipitem") {
+    const username = interaction.options.getString("username");
+    const slot     = interaction.options.getNumber("slot");
+    await interaction.deferReply({ ephemeral: true });
+    const key    = [...activeSockets.keys()].find(k => k.toLowerCase() === username.toLowerCase());
+    const socket = key ? activeSockets.get(key) : null;
+    if (!socket || socket.readyState !== 1) {
+      return interaction.editReply(`❌ **${username}** is not connected.`);
+    }
+    socket.send(JSON.stringify({ type: "unequip", slot }));
+    await interaction.editReply(`✅ Sent unequip to **${key}**!
+\`\`\`
+Slot: ${slot}
+\`\`\``);
+  }
+
+  else if (interaction.commandName === "status") {
       await interaction.deferReply({ ephemeral: true });
       if (activeSockets.size === 0) return interaction.editReply("🔴 No users connected.");
       const list = [...activeSockets.keys()].map(u => `• **${u}**`).join("\n");
